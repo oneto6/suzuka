@@ -75,18 +75,6 @@ class AdvertiseNearbyDeviceNotifier
     int offset,
     Uint8List? value,
   ) {
-    final s = state;
-    // debugPrint(
-    //   'onValueChange: ${s.toString()}, $deviceId, ${utf8.decode(value)}, $timestamp, $characteristicId',
-    // );
-    if (s is! StateDiscovery || !s.discovery.contains(deviceId)) {
-      return PeripheralWriteRequestResult();
-    }
-    if (value != null) {
-      final next = StateConnected(deviceId, utf8.decode(value));
-      _handleState(state, next);
-      state = next;
-    }
     return PeripheralWriteRequestResult();
   }
 
