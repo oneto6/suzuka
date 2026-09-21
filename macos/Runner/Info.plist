@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>Suzuka uses Bluetooth to discover and communicate with nearby devices.</string>
+  <key>NSBluetoothPeripheralUsageDescription</key>
+  <string>This app needs Bluetooth to connect to nearby devices.</string>
 </dict>
 </plist>
