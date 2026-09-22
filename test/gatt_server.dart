@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:suzuka/feature/advertise_nearby_device.dart';
+import 'package:suzuka/page/advertise_nearby_device.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
