@@ -1,5 +1,7 @@
 sealed class AdvertiseNearbyDeviceState {}
 
+class StateInitial extends AdvertiseNearbyDeviceState {}
+
 class StatePermissionDenied extends AdvertiseNearbyDeviceState {}
 
 class StateBluetoothTurnedOff extends AdvertiseNearbyDeviceState {}
@@ -10,7 +12,7 @@ class StateAvailable extends AdvertiseNearbyDeviceState {
 
   StateAvailable(this.advertisement, this.discovery);
 
-  AdvertiseNearbyDeviceState copyWith({
+  StateAvailable copyWith({
     bool? advertisement,
     Set<String>? Function()? discovery,
   }) {

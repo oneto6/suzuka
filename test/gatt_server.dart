@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:suzuka/page/advertise_nearby_device.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  UniversalBle.setLogLevel(.none);
   runApp(ProviderScope(child: MyApp(AdvertiseNearbyDevice())));
 }
 
@@ -17,6 +18,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(colorScheme: .fromSeed(seedColor: Colors.deepPurple)),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: .dark,
       home: AdvertiseNearbyDevice(),
     );
   }
