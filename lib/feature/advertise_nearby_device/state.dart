@@ -22,3 +22,26 @@ class StateAvailable extends AdvertiseNearbyDeviceState {
     );
   }
 }
+
+enum UnauthorizedSubState { off, on }
+
+sealed class BleState {
+  const BleState();
+}
+
+class BleInitial extends BleState {
+  const BleInitial();
+}
+
+class BleOn extends BleState {
+  const BleOn();
+}
+
+class BleOff extends BleState {
+  const BleOff();
+}
+
+class BleUnauthorized extends BleState {
+  final UnauthorizedSubState subState;
+  const BleUnauthorized(this.subState);
+}
