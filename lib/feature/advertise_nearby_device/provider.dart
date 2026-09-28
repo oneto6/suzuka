@@ -9,12 +9,11 @@ final advertiseNearbyDeviceProvider = NotifierProvider.autoDispose(
   AdvertiseNearbyDeviceNotifier.new,
 );
 
-class AdvertiseNearbyDeviceNotifier
-    extends Notifier<AdvertiseNearbyDeviceState> {
+class AdvertiseNearbyDeviceNotifier extends Notifier<BleNearybyState> {
   late StreamSubscription<BleDevice> discoverySub;
   final device = <String, BleDevice>{};
-  late BleRepo repo;
-  late StreamSubscription<AdvertiseNearbyDeviceState> sub;
+  late BleNearbyRepo repo;
+  late StreamSubscription<BleNearybyState> sub;
   late Timer timer;
 
   Timer get getTimer => Timer.periodic(Duration(seconds: 2), (_) {
@@ -26,14 +25,14 @@ class AdvertiseNearbyDeviceNotifier
   });
 
   @override
-  AdvertiseNearbyDeviceState build() {
+  BleNearybyState build() {
     ref.onDispose(() {
       debugPrint('onDispose');
     });
-    repo = blerepo;
-    blerepo.initialize();
+    repo = BleNearbyRepo();
+    bleNearbyRepo.initialize();
     sub = repo.stateStream.listen(listner);
-    discoverySub = blerepo.deviceStream.listen(discoveryListner);
+    discoverySub = bleNearbyRepo.deviceStream.listen(discoveryListner);
 
     timer = getTimer;
 
@@ -41,7 +40,7 @@ class AdvertiseNearbyDeviceNotifier
     ref.onDispose(timer.cancel);
     ref.onDispose(discoverySub.cancel);
     ref.onDispose(sub.cancel);
-    ref.onDispose(blerepo.dispose);
+    ref.onDispose(bleNearbyRepo.dispose);
     return StateInitial();
   }
 
@@ -53,7 +52,7 @@ class AdvertiseNearbyDeviceNotifier
     await repo.connectDevice(deviceId);
   }
 
-  void listner(AdvertiseNearbyDeviceState event) {
+  void listner(BleNearybyState event) {
     state = event;
   }
 }

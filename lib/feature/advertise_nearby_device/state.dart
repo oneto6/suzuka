@@ -1,12 +1,12 @@
-sealed class AdvertiseNearbyDeviceState {}
+sealed class BleNearybyState {}
 
-class StateInitial extends AdvertiseNearbyDeviceState {}
+class StateInitial extends BleNearybyState {}
 
-class StatePermissionDenied extends AdvertiseNearbyDeviceState {}
+class StatePermissionDenied extends BleNearybyState {}
 
-class StateBluetoothTurnedOff extends AdvertiseNearbyDeviceState {}
+class StateBluetoothTurnedOff extends BleNearybyState {}
 
-class StateAvailable extends AdvertiseNearbyDeviceState {
+class StateAvailable extends BleNearybyState {
   final String? service;
   final bool advertisement;
   final Set<String>? discovery;

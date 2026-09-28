@@ -20,22 +20,22 @@ extension AvailabilityStreamX on Stream<AvailabilityState> {
   }
 }
 
-final blerepo = BleRepo();
+final bleNearbyRepo = BleNearbyRepo();
 
-class BleRepo {
-  late StreamController<AdvertiseNearbyDeviceState> _stateStreamController;
-  late Stream<AdvertiseNearbyDeviceState> stateStream;
+class BleNearbyRepo {
+  late StreamController<BleNearybyState> _stateStreamController;
+  late Stream<BleNearybyState> stateStream;
   late StreamSubscription<AvailabilityState> _sub;
   late Stream<BleDevice> deviceStream;
-  late AdvertiseNearbyDeviceState _state;
+  late BleNearybyState _state;
 
-  void _emit(AdvertiseNearbyDeviceState state) {
+  void _emit(BleNearybyState state) {
     _state = state;
     _stateStreamController.add(_state);
   }
 
   void dispose() async {
-    debugPrint('blerepo dispose');
+    debugPrint('BleNearbyRepo dispose');
     _sub.cancel();
     _stateStreamController.close();
     final AvailabilityState availabilityState =
@@ -61,10 +61,9 @@ class BleRepo {
   }
 
   Future<void> initialize() async {
-    debugPrint('blerepo initialize');
+    debugPrint('BleNearbyRepo initialize');
     deviceStream = UniversalBle.scanStream;
-    _stateStreamController =
-        StreamController<AdvertiseNearbyDeviceState>.broadcast();
+    _stateStreamController = StreamController<BleNearybyState>.broadcast();
     stateStream = _stateStreamController.stream;
 
     final p = await UniversalBle.hasPermissions();
@@ -181,7 +180,7 @@ class BleRepo {
 
     bool discovery = (await UniversalBle.isScanning());
     debugPrint('discovery: $discovery, service: $service');
-    AdvertiseNearbyDeviceState state = _state;
+    BleNearybyState state = _state;
 
     if (state is! StateAvailable) {
       state = StateAvailable.name(service, false, {});

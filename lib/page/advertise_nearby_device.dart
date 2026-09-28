@@ -4,8 +4,8 @@ import 'package:suzuka/feature/advertise_nearby_device/advertise_nearby_device.d
 
 // import 'package:flutter_test/flutter_test.dart';
 
-class AdvertiseNearbyDevice extends ConsumerWidget {
-  const AdvertiseNearbyDevice({super.key});
+class BleNearby extends ConsumerWidget {
+  const BleNearby({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,7 +26,7 @@ class AdvertiseNearbyDevice extends ConsumerWidget {
                             onPressed: () {
                               Navigator.of(context).pushReplacement(
                                 MaterialPageRoute(
-                                  builder: (context) => AdvertiseNearbyDevice(),
+                                  builder: (context) => BleNearby(),
                                 ),
                               );
                             },

@@ -6,7 +6,7 @@ import 'package:universal_ble/universal_ble.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   UniversalBle.setLogLevel(.info);
-  runApp(ProviderScope(child: MyApp(AdvertiseNearbyDevice())));
+  runApp(ProviderScope(child: MyApp(BleNearby())));
 }
 
 class MyApp extends StatelessWidget {
@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       themeMode: .dark,
-      home: AdvertiseNearbyDevice(),
+      home: BleNearby(),
     );
   }
 }
