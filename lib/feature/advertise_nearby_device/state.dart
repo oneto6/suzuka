@@ -7,19 +7,27 @@ class StatePermissionDenied extends AdvertiseNearbyDeviceState {}
 class StateBluetoothTurnedOff extends AdvertiseNearbyDeviceState {}
 
 class StateAvailable extends AdvertiseNearbyDeviceState {
+  final String? service;
   final bool advertisement;
   final Set<String>? discovery;
 
-  StateAvailable(this.advertisement, this.discovery);
+  StateAvailable.name(this.service, this.advertisement, this.discovery);
 
   StateAvailable copyWith({
+    String? service,
     bool? advertisement,
     Set<String>? Function()? discovery,
   }) {
-    return StateAvailable(
+    return StateAvailable.name(
+      service ?? this.service,
       advertisement ?? this.advertisement,
       discovery == null ? this.discovery : discovery(),
     );
+  }
+
+  @override
+  toString() {
+    return 'StateAvailable{advertisement: $advertisement, discovery: $discovery}';
   }
 }
 

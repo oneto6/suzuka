@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:ble_peripheral_plus/ble_peripheral.dart' as peripheral;
 import 'package:flutter/foundation.dart';
 import 'package:suzuka/core/config.dart';
 import 'package:suzuka/feature/advertise_nearby_device/state.dart';
@@ -11,7 +13,6 @@ extension AvailabilityStreamX on Stream<AvailabilityState> {
     AvailabilityState initial = AvailabilityState.unknown,
   }) {
     var previous = initial;
-
     return listen((curr) {
       listener(previous, curr);
       previous = curr;
@@ -19,201 +20,283 @@ extension AvailabilityStreamX on Stream<AvailabilityState> {
   }
 }
 
+final blerepo = BleRepo();
+
 class BleRepo {
-  late StreamController<AvailabilityState> availabilityStreamController;
-  late Stream<AvailabilityState> availabilityStream;
-  late StreamController<AdvertiseNearbyDeviceState> stateStreamController;
+  late StreamController<AdvertiseNearbyDeviceState> _stateStreamController;
   late Stream<AdvertiseNearbyDeviceState> stateStream;
-  late StreamSubscription<AvailabilityState> sub;
-  void initialize() {
-    ///
-    _initialize();
+  late StreamSubscription<AvailabilityState> _sub;
+  late Stream<BleDevice> deviceStream;
+  late AdvertiseNearbyDeviceState _state;
+
+  void _emit(AdvertiseNearbyDeviceState state) {
+    _state = state;
+    _stateStreamController.add(_state);
   }
 
-  void _initialize() async {
-    sub = UniversalBle.availabilityStream.listenPair(listner);
+  void dispose() async {
+    debugPrint('blerepo dispose');
+    _sub.cancel();
+    _stateStreamController.close();
+    final AvailabilityState availabilityState =
+        await UniversalBle.getBluetoothAvailabilityState();
+    if (availabilityState == .poweredOn) {
+      await stopScan();
+      await stopService();
+      return;
+    }
+    await for (var i in UniversalBle.availabilityStream) {
+      if (i != .poweredOn) continue;
+    }
+    try {
+      await stopScan();
+    } catch (e) {
+      debugPrint('stopScan err: ${e.toString()}');
+    }
+    try {
+      await stopService();
+    } catch (e) {
+      debugPrint('stopService err: ${e.toString()}');
+    }
   }
 
-  void dispose() {}
+  Future<void> initialize() async {
+    debugPrint('blerepo initialize');
+    deviceStream = UniversalBle.scanStream;
+    _stateStreamController =
+        StreamController<AdvertiseNearbyDeviceState>.broadcast();
+    stateStream = _stateStreamController.stream;
+
+    final p = await UniversalBle.hasPermissions();
+    debugPrint('hasPermissions: $p');
+    if (!p) {
+      await UniversalBle.requestPermissions();
+    }
+
+    _sub = UniversalBle.availabilityStream.listenPair(_listner);
+    _emit(StateInitial());
+    peripheral.BlePeripheral.setWriteRequestCallback(writeHandle);
+    peripheral.BlePeripheral.setAdvertisingStatusUpdateCallback((b, s) async {
+      debugPrint('setAdvertisingStatusUpdateCallback: $b $s');
+      var state = _state;
+      if (state is! StateAvailable) return;
+      _emit(state.copyWith(advertisement: b));
+    });
+    peripheral.BlePeripheral.setServiceAddedCallback((s, err) {
+      debugPrint('setServiceAddedCallback: $s $err');
+    });
+  }
 
   Future<void> stopService() async {
-    await UniversalBlePeripheral.stopAdvertising();
-    await UniversalBlePeripheral.clearServices();
+    await peripheral.BlePeripheral.clearServices();
+    await peripheral.BlePeripheral.stopAdvertising();
   }
 
   Future<void> addService() async {
-    if ((await UniversalBlePeripheral.getServices()).contains(bleServiceID)) {
-      await UniversalBlePeripheral.stopAdvertising();
-      await UniversalBlePeripheral.clearServices();
-    }
-    await UniversalBlePeripheral.addService(
-      BlePeripheralService(
+    await peripheral.BlePeripheral.isSupported();
+    await peripheral.BlePeripheral.addService(
+      peripheral.BleService(
         uuid: bleServiceID,
+        primary: true,
         characteristics: [
-          BlePeripheralCharacteristic(
+          peripheral.BleCharacteristic(
             uuid: bleWrite,
-            properties: [.write],
-            permissions: [.writeable],
+            properties: [peripheral.CharacteristicProperties.write.index],
+            permissions: [
+              peripheral.AttributePermissions.writeEncryptionRequired.index,
+            ],
           ),
-          BlePeripheralCharacteristic(
+          peripheral.BleCharacteristic(
             uuid: bleNotify,
-            properties: [.notify],
+            properties: [peripheral.CharacteristicProperties.notify.index],
             permissions: [],
+          ),
+          peripheral.BleCharacteristic(
+            uuid: bleRead,
+            properties: [peripheral.CharacteristicProperties.read.index],
+            permissions: [
+              peripheral.AttributePermissions.readEncryptionRequired.index,
+            ],
           ),
         ],
       ),
     );
-
-    await UniversalBlePeripheral.startAdvertising(services: [bleServiceID]);
+    await peripheral.BlePeripheral.startAdvertising(
+      services: [bleServiceID],
+      requireBonding: true,
+    );
   }
 
-  void listner(AvailabilityState? prev, AvailabilityState now) async {
-    if (prev != null && now == prev) return;
-
-    if (now == .poweredOn && (prev != .poweredOff || prev != .poweredOn)) {
-      UniversalBle.scanStream;
-      bool p = await UniversalBle.hasPermissions();
-      if (!p) {
-        await UniversalBle.requestPermissions();
-        p = await UniversalBle.hasPermissions();
-        if (!p) {
-          stateStreamController.add(StatePermissionDenied());
-          // state = StatePermissionDenied();
-          return;
-        }
-      }
-      bool discovery = true;
-      bool service = true;
-      try {
-        await UniversalBle.startScan();
-      } catch (e) {
-        discovery = false;
-        debugPrint('startScan err: ${e.toString()}');
-      }
-      try {
-        await addService();
-      } catch (e) {
-        service = false;
-        debugPrint('addService err: ${e.toString()}');
-      }
-      stateStreamController.add(StateAvailable(service, discovery ? {} : null));
-    }
+  void _listner(AvailabilityState prev, AvailabilityState now) async {
+    if (prev == now) return;
+    debugPrint('listner prev: $prev now: $now');
 
     if (now == .poweredOff) {
-      debugPrint('powered off');
-      stateStreamController.add(StateBluetoothTurnedOff());
+      _handlePoweroff();
     }
     if (now == .poweredOn) {
-      bool discovery = true;
-      bool service = (await UniversalBlePeripheral.getServices()).contains(
-        bleServiceID,
-      );
-      try {
-        await UniversalBle.stopScan();
-      } catch (e) {
-        discovery =
-            false; //if stopScan falled it kind of certain that discovey has failed silently
-        debugPrint('stopScan err: ${e.toString()}');
-      }
-
-      try {
-        await UniversalBle.startScan();
-      } catch (e) {
-        debugPrint('startScan err: ${e.toString()}');
-      }
-      stateStreamController.add(StateAvailable(service, discovery ? {} : null));
+      await _handlePoweron();
     }
   }
-}
 
-// Future<void> _initialize() async {
-//   UniversalBle.scanStream;
-//   bool p = await UniversalBle.hasPermissions();
-//   if (!p) {
-//     await UniversalBle.requestPermissions();
-//     p = await UniversalBle.hasPermissions();
-//     if (!p) {
-//       stateStreamController.add(StatePermissionDenied());
-//       // state = StatePermissionDenied();
-//       return;
-//     }
-//   }
-//   bool discovery = true;
-//   bool service = true;
-//   await for (var i in availabilityStream) {
-//     if (i != .poweredOn) {
-//       if (i == .poweredOff) {
-//         stateStreamController.add(StateBluetoothTurnedOff());
-//         // state = StateBluetoothTurnedOff();
-//         continue;
-//       }
-//       stateStreamController.add(StatePermissionDenied());
-//       // state = StatePermissionDenied();
-//       continue;
-//     }
-//     debugPrint('powered on');
-//     try {
-//       await UniversalBle.startScan();
-//     } catch (e) {
-//       discovery = false;
-//       debugPrint('startScan err: ${e.toString()}');
-//     }
-//     try {
-//       await addService();
-//     } catch (e) {
-//       service = false;
-//       debugPrint('addService err: ${e.toString()}');
-//     }
-//     stateStreamController.add(StateAvailable(service, discovery ? {} : null));
-//     // state = StateAvailable(service, discovery ? {} : null);
-//     break;
-//   }
-//   while (_dispose == false) {
-//     await for (var i in availabilityStream) {
-//       if (i == .poweredOn) {
-//         continue; //poweredOn; if it emit that means it is emitted twice so nothing to do here. added for perspective
-//       } else if (i != .poweredOff) {
-//         stateStreamController.add(StatePermissionDenied());
-//         // state = StatePermissionDenied();
-//       }
-//       debugPrint('powered off');
-//       stateStreamController.add(StateBluetoothTurnedOff());
-//       // state = StateBluetoothTurnedOff();
-//       break;
-//     }
-//
-//     await for (var i in availabilityStream) {
-//       if (i != .poweredOn) {
-//         if (i == .poweredOff) {
-//           continue; //poweredOff; if it emit that means it is emitted twice so nothing to do here. added for perspective
-//         }
-//         stateStreamController.add(StatePermissionDenied());
-//         // state = StatePermissionDenied();
-//         continue;
-//       }
-//       debugPrint('powered on');
-//       discovery = true;
-//       () async {
-//         //not to await; as so we don't want to starve the loop of emmited event
-//         try {
-//           await UniversalBle.stopScan();
-//         } catch (e) {
-//           discovery =
-//               false; //if stopScan falled it kind of certain that discovey has failed silently
-//           debugPrint('stopScan err: ${e.toString()}');
-//         }
-//
-//         try {
-//           await UniversalBle.startScan();
-//         } catch (e) {
-//           debugPrint('startScan err: ${e.toString()}');
-//         }
-//         stateStreamController.add(
-//           StateAvailable(service, discovery ? {} : null),
-//         );
-//         // state = StateAvailable(service, discovery ? {} : null);
-//       }();
-//       break;
-//     }
-//   }
-// }
+  void _handlePoweroff() {
+    debugPrint('powered off');
+    _emit(StateBluetoothTurnedOff());
+  }
+
+  Future<void> _handlePoweron() async {
+    debugPrint('handlePoweron');
+    try {
+      await stopService();
+    } catch (e) {
+      debugPrint('stopService err: ${e.toString()}');
+    }
+    try {
+      await peripheral.BlePeripheral.initialize();
+    } catch (e) {
+      debugPrint('initialize err: ${e.toString()}');
+    }
+
+    try {
+      await addService();
+    } catch (e) {
+      debugPrint('addService err: ${e.toString()}');
+    }
+    try {
+      await stopScan();
+    } catch (e) {
+      debugPrint('stopScan err: ${e.toString()}');
+    }
+
+    try {
+      await startScan();
+    } catch (e) {
+      debugPrint('startScan err: ${e.toString()}');
+    }
+    String? service;
+    for (var i in await peripheral.BlePeripheral.getServices()) {
+      debugPrint('service: ${i.toString()}');
+      if (i.toLowerCase() == bleServiceID) service = i;
+    }
+
+    bool discovery = (await UniversalBle.isScanning());
+    debugPrint('discovery: $discovery, service: $service');
+    AdvertiseNearbyDeviceState state = _state;
+
+    if (state is! StateAvailable) {
+      state = StateAvailable.name(service, false, {});
+    } else {
+      state = state.copyWith(
+        service: service,
+        discovery: () => discovery ? {} : null,
+      );
+    }
+    _emit(state);
+  }
+
+  Future<void> stopScan() => UniversalBle.stopScan();
+
+  Future<void> startScan() => UniversalBle.startScan(
+    scanFilter: ScanFilter(withServices: [bleServiceID]),
+  );
+
+  Future<void> connectDevice(String deviceId) async {
+    try {
+      await UniversalBle.connect(deviceId);
+    } catch (e) {
+      debugPrint('connect device err: ${e.toString()}');
+      return;
+    }
+    await _connectDevice(deviceId);
+    await UniversalBle.disconnect(deviceId);
+  }
+
+  peripheral.WriteRequestResult? writeHandle(
+    String deviceId,
+    String characteristicId,
+    int offset,
+    Uint8List? value,
+  ) {
+    debugPrint('writeHandle');
+    if (value == null) return null;
+    final v = utf8.decode(value);
+    debugPrint('write handler value: $v ');
+    peripheral.BlePeripheral.updateCharacteristic(
+      characteristicId: bleNotify,
+      value: utf8.encode('sdp recipents msg'),
+      deviceId: deviceId,
+    );
+    // UniversalBlePeripheral.updateCharacteristicValue(
+    //   characteristicId: bleNotify,
+    //   value: utf8.encode('sdp recipents msg'),
+    //   deviceId: deviceId,
+    // );
+    return null;
+  }
+
+  Future<void> _connectDevice(String deviceId) async {
+    final dataTransaction = Completer<List<int>>();
+    void onValueChange(
+      String deviceId,
+      String characteristicId,
+      Uint8List value,
+      int? timestamp,
+    ) {
+      final msg = utf8.decode(value);
+      debugPrint('onValueChange: $deviceId $characteristicId $msg $timestamp');
+      dataTransaction.complete(value);
+    }
+
+    await UniversalBle.pair(deviceId);
+    debugPrint('_connectDevice');
+
+    BleConnectionState s = await UniversalBle.getConnectionState(deviceId);
+    debugPrint('connection state: $s');
+    var serviceList = await UniversalBle.discoverServices(deviceId);
+
+    BleService? service;
+    BleCharacteristic? notifyChar;
+    BleCharacteristic? writeChar;
+    debugPrint(
+      'service: $service notifyChar: $notifyChar writeChar: $writeChar',
+    );
+
+    for (final s in serviceList) {
+      if (s.uuid.toLowerCase() == bleServiceID.toLowerCase()) {
+        service = s;
+        break;
+      }
+    }
+
+    if (service == null) return;
+
+    for (final characteristic in service.characteristics) {
+      if (characteristic.uuid.toLowerCase() == bleNotify.toLowerCase()) {
+        notifyChar = characteristic;
+      }
+
+      if (characteristic.uuid.toLowerCase() == bleWrite.toLowerCase()) {
+        writeChar = characteristic;
+      }
+    }
+
+    if (notifyChar == null || writeChar == null) return;
+    UniversalBle.onValueChange = onValueChange;
+    await UniversalBle.subscribeNotifications(
+      deviceId,
+      service.uuid,
+      notifyChar.uuid,
+    );
+    await UniversalBle.write(
+      deviceId,
+      service.uuid,
+      writeChar.uuid,
+      utf8.encode('sdp msg'),
+      // withoutResponse: true,
+    );
+    final data = await dataTransaction.future;
+    debugPrint('data: ${utf8.decode(data)}');
+    UniversalBle.onValueChange = null;
+    await UniversalBle.unsubscribe(deviceId, service.uuid, notifyChar.uuid);
+  }
+}

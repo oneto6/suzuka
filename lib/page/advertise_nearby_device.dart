@@ -12,42 +12,82 @@ class AdvertiseNearbyDevice extends ConsumerWidget {
     final state = ref.watch(advertiseNearbyDeviceProvider);
     return Scaffold(
       appBar: switch (state) {
-        // StateConnected(:final id) => AppBar(title: Text(id)),
+        StateAvailable() => AppBar(
+          title: Text('Available'),
+          actions: [
+            IconButton(
+              onPressed: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => Scaffold(
+                      appBar: AppBar(
+                        actions: [
+                          IconButton(
+                            onPressed: () {
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  builder: (context) => AdvertiseNearbyDevice(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.stop),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.stop),
+            ),
+          ],
+        ),
+
         _ => null,
       },
       body: switch (state) {
-        StateInitial() => SizedBox(),
+        StateInitial() => Center(child: Text('Initial')),
         StatePermissionDenied() => Center(child: Text('Permission Denied')),
         StateBluetoothTurnedOff() => Center(
           child: Text('Bluetooth Turned Off'),
         ),
-        StateAvailable(:final advertisement, :final discovery) => Column(
-          children: [
-            if (advertisement)
+        StateAvailable(
+          :final service,
+          :final advertisement,
+          :final discovery,
+        ) =>
+          Column(
+            children: [
               Expanded(
                 child: SizedBox.square(
-                  child: Center(child: Text('Advertising')),
+                  child: Center(
+                    child: Text(
+                      (advertisement && service != null)
+                          ? 'Advertising'
+                          : 'No Advertising',
+                    ),
+                  ),
                 ),
               ),
-            if (discovery == null) Expanded(child: Text('No discovery')),
-            if (discovery != null)
-              Expanded(
-                child: ListView.builder(
-                  itemCount: discovery.length,
-                  itemBuilder: (context, index) {
-                    return ListTile(
-                      onTap: () {
-                        ref
-                            .read(advertiseNearbyDeviceProvider.notifier)
-                            .connectDevice(discovery.elementAt(index));
-                      },
-                      title: Text(discovery.elementAt(index)),
-                    );
-                  },
+              if (discovery == null) Text('No discovery'),
+              if (discovery != null)
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: discovery.length,
+                    itemBuilder: (context, index) {
+                      return ListTile(
+                        onTap: () {
+                          ref
+                              .read(advertiseNearbyDeviceProvider.notifier)
+                              .connectDevice(discovery.elementAt(index));
+                        },
+                        title: Text(discovery.elementAt(index)),
+                      );
+                    },
+                  ),
                 ),
-              ),
-          ],
-        ),
+            ],
+          ),
       },
     );
   }

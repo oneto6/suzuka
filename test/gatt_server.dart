@@ -5,7 +5,7 @@ import 'package:universal_ble/universal_ble.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  UniversalBle.setLogLevel(.none);
+  UniversalBle.setLogLevel(.info);
   runApp(ProviderScope(child: MyApp(AdvertiseNearbyDevice())));
 }
 

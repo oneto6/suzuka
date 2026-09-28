@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:suzuka/core/config.dart';
 import 'package:universal_ble/universal_ble.dart';
 
-StreamController<BleDevice> bleDeviceStreamController =
-    StreamController<BleDevice>.broadcast();
+StreamController<Map<String, BleDevice>> bleDeviceStreamController =
+    StreamController<Map<String, BleDevice>>.broadcast();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // UniversalBle.hasPermissions().then((b) async {
@@ -78,10 +79,34 @@ void main() async {
   //   var r = await UniversalBlePeripheral.getAvailabilityState();
   //   debugPrint('peripheral availability state: $r');
   // }();
-  var notify = 0;
-  bleDeviceStreamController.stream.listen((event) {
-    notify++;
-    debugPrint('notify: $notify');
+  await UniversalBlePeripheral.getCapabilities();
+  await UniversalBlePeripheral.getAvailabilityState().then((s) async {
+    for (
+      var state = await UniversalBlePeripheral.getAvailabilityState();
+      state != .ready;
+      state = await UniversalBlePeripheral.getAvailabilityState()
+    ) {
+      debugPrint('peripheral availability state: $state');
+      await Future.delayed(const Duration(seconds: 1));
+    }
+    await addService();
+  });
+
+  final list = <String, BleDevice>{};
+  Timer.periodic(const Duration(seconds: 2), (timer) async {
+    bleDeviceStreamController.add({...list});
+    list.clear();
+  });
+  UniversalBle.scanStream.listen((i) {
+    list[i.deviceId] = i;
+  });
+  UniversalBle.startScan(scanFilter: ScanFilter(withServices: [bleServiceID]));
+
+  UniversalBle.availabilityStream.listen((event) async {
+    debugPrint('availability: $event');
+    for (var i in await UniversalBlePeripheral.getServices()) {
+      debugPrint('service: $i');
+    }
   });
   runApp(MyApp());
 }
@@ -106,10 +131,41 @@ class MyApp extends StatelessWidget {
         body: StreamBuilder(
           stream: bleDeviceStreamController.stream,
           builder: (context, snapshot) {
-            return Text(snapshot.data.toString());
+            final data = snapshot.data;
+            if (data == null) return Text('No Data');
+
+            return ListView(
+              children: [for (var i in data.keys) Text(data[i].toString())],
+            );
           },
         ),
       ),
     );
   }
+}
+
+Future<void> addService() async {
+  if ((await UniversalBlePeripheral.getServices()).contains(bleServiceID)) {
+    await UniversalBlePeripheral.stopAdvertising();
+    await UniversalBlePeripheral.clearServices();
+  }
+  await UniversalBlePeripheral.addService(
+    BlePeripheralService(
+      uuid: bleServiceID,
+      characteristics: [
+        BlePeripheralCharacteristic(
+          uuid: bleWrite,
+          properties: [.write],
+          permissions: [.writeable],
+        ),
+        BlePeripheralCharacteristic(
+          uuid: bleNotify,
+          properties: [.notify],
+          permissions: [],
+        ),
+      ],
+    ),
+  );
+
+  await UniversalBlePeripheral.startAdvertising(services: [bleServiceID]);
 }
