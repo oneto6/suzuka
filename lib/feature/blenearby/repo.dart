@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:ble_peripheral_plus/ble_peripheral.dart' as peripheral;
 import 'package:flutter/foundation.dart';
 import 'package:suzuka/core/config.dart';
-import 'package:suzuka/feature/advertise_nearby_device/state.dart';
+import 'package:suzuka/feature/blenearby/state.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 extension AvailabilityStreamX on Stream<AvailabilityState> {
@@ -199,15 +199,16 @@ class BleNearbyRepo {
     scanFilter: ScanFilter(withServices: [bleServiceID]),
   );
 
-  Future<void> connectDevice(String deviceId) async {
+  Future<String?> connectDevice(String deviceId) async {
     try {
       await UniversalBle.connect(deviceId);
     } catch (e) {
       debugPrint('connect device err: ${e.toString()}');
-      return;
+      return null;
     }
-    await _connectDevice(deviceId);
+    final data = await _connectDevice(deviceId);
     await UniversalBle.disconnect(deviceId);
+    return data;
   }
 
   peripheral.WriteRequestResult? writeHandle(
@@ -218,14 +219,10 @@ class BleNearbyRepo {
   ) {
     debugPrint('writeHandle');
     if (value == null) return null;
-    final v = utf8.decode(value);
-    debugPrint('write handler value: $v ');
-    peripheral.BlePeripheral.updateCharacteristic(
-      characteristicId: bleNotify,
-      value: utf8.encode('sdp recipents msg'),
-      deviceId: deviceId,
-    );
-    // UniversalBlePeripheral.updateCharacteristicValue(
+    final offer = utf8.decode(value);
+    debugPrint('write handler offer: $offer ');
+
+    // peripheral.BlePeripheral.updateCharacteristic(
     //   characteristicId: bleNotify,
     //   value: utf8.encode('sdp recipents msg'),
     //   deviceId: deviceId,
@@ -233,7 +230,7 @@ class BleNearbyRepo {
     return null;
   }
 
-  Future<void> _connectDevice(String deviceId) async {
+  Future<String?> _connectDevice(String deviceId) async {
     final dataTransaction = Completer<List<int>>();
     void onValueChange(
       String deviceId,
@@ -267,7 +264,7 @@ class BleNearbyRepo {
       }
     }
 
-    if (service == null) return;
+    if (service == null) return null;
 
     for (final characteristic in service.characteristics) {
       if (characteristic.uuid.toLowerCase() == bleNotify.toLowerCase()) {
@@ -279,7 +276,7 @@ class BleNearbyRepo {
       }
     }
 
-    if (notifyChar == null || writeChar == null) return;
+    if (notifyChar == null || writeChar == null) return null;
     UniversalBle.onValueChange = onValueChange;
     await UniversalBle.subscribeNotifications(
       deviceId,
@@ -297,5 +294,6 @@ class BleNearbyRepo {
     debugPrint('data: ${utf8.decode(data)}');
     UniversalBle.onValueChange = null;
     await UniversalBle.unsubscribe(deviceId, service.uuid, notifyChar.uuid);
+    return utf8.decode(data);
   }
 }

@@ -1,15 +1,13 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:suzuka/feature/advertise_nearby_device/repo.dart';
-import 'package:suzuka/feature/advertise_nearby_device/state.dart';
+import 'package:suzuka/feature/blenearby/repo.dart';
+import 'package:suzuka/feature/blenearby/state.dart';
 import 'package:universal_ble/universal_ble.dart';
 
-final advertiseNearbyDeviceProvider = NotifierProvider.autoDispose(
-  AdvertiseNearbyDeviceNotifier.new,
-);
+final bleNearbyProvider = NotifierProvider.autoDispose(BleNearbyNotifier.new);
 
-class AdvertiseNearbyDeviceNotifier extends Notifier<BleNearybyState> {
+class BleNearbyNotifier extends Notifier<BleNearybyState> {
   late StreamSubscription<BleDevice> discoverySub;
   final device = <String, BleDevice>{};
   late BleNearbyRepo repo;
@@ -48,9 +46,8 @@ class AdvertiseNearbyDeviceNotifier extends Notifier<BleNearybyState> {
     device[event.deviceId] = event;
   }
 
-  void connectDevice(String deviceId) async {
-    await repo.connectDevice(deviceId);
-  }
+  Future<String?> connectDevice(String deviceId) async =>
+      await repo.connectDevice(deviceId);
 
   void listner(BleNearybyState event) {
     state = event;

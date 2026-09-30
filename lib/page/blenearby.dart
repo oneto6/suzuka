@@ -1,47 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:suzuka/feature/advertise_nearby_device/advertise_nearby_device.dart';
-
-// import 'package:flutter_test/flutter_test.dart';
+import 'package:suzuka/feature/blenearby/provider.dart';
+import 'package:suzuka/feature/blenearby/state.dart';
+import 'package:suzuka/page/bridge.dart';
 
 class BleNearby extends ConsumerWidget {
   const BleNearby({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(advertiseNearbyDeviceProvider);
+    final state = ref.watch(bleNearbyProvider);
     return Scaffold(
       appBar: switch (state) {
-        StateAvailable() => AppBar(
-          title: Text('Available'),
-          actions: [
-            IconButton(
-              onPressed: () {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) => Scaffold(
-                      appBar: AppBar(
-                        actions: [
-                          IconButton(
-                            onPressed: () {
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                  builder: (context) => BleNearby(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.stop),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.stop),
-            ),
-          ],
-        ),
+        StateAvailable() => AppBar(title: Text('Available')),
 
         _ => null,
       },
@@ -76,10 +47,22 @@ class BleNearby extends ConsumerWidget {
                     itemCount: discovery.length,
                     itemBuilder: (context, index) {
                       return ListTile(
-                        onTap: () {
-                          ref
-                              .read(advertiseNearbyDeviceProvider.notifier)
+                        onTap: () async {
+                          final offer = await ref
+                              .read(bleNearbyProvider.notifier)
                               .connectDevice(discovery.elementAt(index));
+
+                          if (offer == null) return;
+                          void func(_) => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: ((context) =>
+                                  Bridge(ClientNegotiationRole(offer))),
+                            ),
+                          );
+                          if (context.mounted) {
+                            func(null);
+                          }
+                          WidgetsBinding.instance.addPostFrameCallback(func);
                         },
                         title: Text(discovery.elementAt(index)),
                       );

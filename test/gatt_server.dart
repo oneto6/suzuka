@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:suzuka/page/advertise_nearby_device.dart';
+import 'package:suzuka/page/blenearby.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 void main() async {
