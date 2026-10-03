@@ -2,14 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:suzuka/feature/blenearby/provider.dart';
 import 'package:suzuka/feature/blenearby/state.dart';
+import 'package:suzuka/feature/blenearbyAction/provider.dart';
 import 'package:suzuka/page/bridge.dart';
 
-class BleNearby extends ConsumerWidget {
+class BleNearby extends ConsumerStatefulWidget {
   const BleNearby({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BleNearby> createState() => _BleNearbyState();
+}
+
+class _BleNearbyState extends ConsumerState<BleNearby> {
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<BlenearbyAction?>(
+      blenearbyActionProvider.select((s) => s.value),
+      listener,
+    );
     final state = ref.watch(bleNearbyProvider);
+
     return Scaffold(
       appBar: switch (state) {
         StateAvailable() => AppBar(title: Text('Available')),
@@ -48,21 +59,9 @@ class BleNearby extends ConsumerWidget {
                     itemBuilder: (context, index) {
                       return ListTile(
                         onTap: () async {
-                          final offer = await ref
+                          await ref
                               .read(bleNearbyProvider.notifier)
                               .connectDevice(discovery.elementAt(index));
-
-                          if (offer == null) return;
-                          void func(_) => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: ((context) =>
-                                  Bridge(ClientNegotiationRole(offer))),
-                            ),
-                          );
-                          if (context.mounted) {
-                            func(null);
-                          }
-                          WidgetsBinding.instance.addPostFrameCallback(func);
                         },
                         title: Text(discovery.elementAt(index)),
                       );
@@ -73,5 +72,24 @@ class BleNearby extends ConsumerWidget {
           ),
       },
     );
+  }
+
+  void listener(BlenearbyAction? previous, BlenearbyAction? next) {
+    if (next == null) return;
+    switch (next) {
+      case OfferRequested(:final deviceId):
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: ((context) => Bridge(NegotiationRole.create(deviceId))),
+          ),
+        );
+      case OfferReceived(:final deviceId, :final peerOffer):
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: ((context) =>
+                Bridge(NegotiationRole.create(deviceId, peerOffer))),
+          ),
+        );
+    }
   }
 }

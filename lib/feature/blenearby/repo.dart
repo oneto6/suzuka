@@ -29,6 +29,12 @@ class BleNearbyRepo {
   late Stream<BleDevice> deviceStream;
   late BleNearybyState _state;
 
+  void Function(String, String)? _offerReceivedCallback;
+
+  set offerReceivedCallback(void Function(String, String) callback) {
+    _offerReceivedCallback = callback;
+  }
+
   void _emit(BleNearybyState state) {
     _state = state;
     _stateStreamController.add(_state);
@@ -227,6 +233,7 @@ class BleNearbyRepo {
     //   value: utf8.encode('sdp recipents msg'),
     //   deviceId: deviceId,
     // );
+    _offerReceivedCallback?.call(deviceId, offer);
     return null;
   }
 

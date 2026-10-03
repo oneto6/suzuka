@@ -1,13 +1,16 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:suzuka/feature/blenearby/repo.dart';
 import 'package:suzuka/feature/blenearby/state.dart';
+import 'package:suzuka/feature/blenearbyAction/provider.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 final bleNearbyProvider = NotifierProvider.autoDispose(BleNearbyNotifier.new);
 
 class BleNearbyNotifier extends Notifier<BleNearybyState> {
+  late StreamController<BlenearbyAction> _blenearbyActionController;
+  Stream<BlenearbyAction> get blenearbyActionStream =>
+      _blenearbyActionController.stream;
   late StreamSubscription<BleDevice> discoverySub;
   final device = <String, BleDevice>{};
   late BleNearbyRepo repo;
@@ -24,13 +27,13 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
 
   @override
   BleNearybyState build() {
-    ref.onDispose(() {
-      debugPrint('onDispose');
-    });
+    _blenearbyActionController = StreamController<BlenearbyAction>();
+    ref.onDispose(_blenearbyActionController.close);
     repo = BleNearbyRepo();
     bleNearbyRepo.initialize();
     sub = repo.stateStream.listen(listner);
     discoverySub = bleNearbyRepo.deviceStream.listen(discoveryListner);
+    bleNearbyRepo.offerReceivedCallback = offerReceivedCallback;
 
     timer = getTimer;
 
@@ -46,10 +49,17 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
     device[event.deviceId] = event;
   }
 
-  Future<String?> connectDevice(String deviceId) async =>
-      await repo.connectDevice(deviceId);
+  Future<void> connectDevice(String deviceId) async {
+    _blenearbyActionController.add(OfferRequested(deviceId));
+    // final sdp = await repo.connectDevice(deviceId);
+    // if (sdp == null) return;
+  }
 
   void listner(BleNearybyState event) {
     state = event;
+  }
+
+  void offerReceivedCallback(String deviceId, String p1) {
+    _blenearbyActionController.add(OfferReceived(deviceId, p1));
   }
 }
