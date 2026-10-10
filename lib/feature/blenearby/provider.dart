@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:suzuka/feature/blenearby/repo.dart';
 import 'package:suzuka/feature/blenearby/state.dart';
@@ -13,7 +14,6 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
       _blenearbyActionController.stream;
   late StreamSubscription<BleDevice> discoverySub;
   final device = <String, BleDevice>{};
-  late BleNearbyRepo repo;
   late StreamSubscription<BleNearybyState> sub;
   late Timer timer;
 
@@ -25,13 +25,21 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
     device.clear();
   });
 
+  HostComposetion get host => bleNearbyRepo.host;
+  ClientComposetion get client => bleNearbyRepo.client;
+
   @override
   BleNearybyState build() {
+    state = StateInitial();
+    _init();
+    return state;
+  }
+
+  Future<void> _init() async {
     _blenearbyActionController = StreamController<BlenearbyAction>();
     ref.onDispose(_blenearbyActionController.close);
-    repo = BleNearbyRepo();
-    bleNearbyRepo.initialize();
-    sub = repo.stateStream.listen(listner);
+    sub = bleNearbyRepo.stateStream.listen(listner);
+    await bleNearbyRepo.initialize();
     discoverySub = bleNearbyRepo.deviceStream.listen(discoveryListner);
     bleNearbyRepo.offerReceivedCallback = offerReceivedCallback;
 
@@ -42,7 +50,6 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
     ref.onDispose(discoverySub.cancel);
     ref.onDispose(sub.cancel);
     ref.onDispose(bleNearbyRepo.dispose);
-    return StateInitial();
   }
 
   void discoveryListner(BleDevice event) {
@@ -51,7 +58,6 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
 
   Future<void> connectDevice(String deviceId) async {
     _blenearbyActionController.add(OfferRequested(deviceId));
-    // final sdp = await repo.connectDevice(deviceId);
     // if (sdp == null) return;
   }
 
@@ -59,7 +65,9 @@ class BleNearbyNotifier extends Notifier<BleNearybyState> {
     state = event;
   }
 
-  void offerReceivedCallback(String deviceId, String p1) {
+  void offerReceivedCallback(String deviceId, String? p1) {
+    debugPrint('offerReceivedCallback: $deviceId $p1');
+    if (p1 == null) return;
     _blenearbyActionController.add(OfferReceived(deviceId, p1));
   }
 }

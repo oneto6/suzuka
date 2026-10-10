@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:suzuka/feature/peer/state.dart';
 
+typedef Offer = Map<String, String?>;
 const config = {
   'iceServers': [
     {'urls': 'stun:stun.l.google.com:19302'},
@@ -16,10 +17,13 @@ extension RTCSessionDescriptionExtension on RTCSessionDescription {
   }
 }
 
+final peerRepo = PeerRepo();
+
 class PeerRepo {
   late Peer state;
 
-  late StreamController<Peer> _stateStreamController;
+  final StreamController<Peer> _stateStreamController = StreamController();
+
   Stream<Peer> get stream => _stateStreamController.stream;
   late StreamSubscription<Peer> _sub;
   late RTCPeerConnection conn;
@@ -31,8 +35,6 @@ class PeerRepo {
   }
 
   Future<void> initialize() async {
-    _stateStreamController = StreamController();
-    _sub = stream.listen(listner);
     await WebRTC.initialize();
     conn = await createPeerConnection(config);
     conn.onSignalingState = onSignalingState;
@@ -43,11 +45,12 @@ class PeerRepo {
     conn.onDataChannel = onDataChannel;
   }
 
-  Future<Map<String, String>> createOffer() async {
+  Future<Offer> createOffer() async {
     conn = await createPeerConnection(config);
     final offer = await conn.createOffer();
     _stateStreamController.add(Host());
-    return offer.toMap();
+    final Offer map = offer.toMap();
+    return map;
   }
 
   Future<void> setOfferAnswer(Map<String, String> map) async {
@@ -55,7 +58,7 @@ class PeerRepo {
     await conn.setRemoteDescription(rSDP);
   }
 
-  Future<Map<String, String>> answerOffer(Map<String, String> offer) async {
+  Future<Offer> answerOffer(Map<String, String> offer) async {
     RTCSessionDescription rSDP;
     try {
       rSDP = RTCSessionDescriptionExtension.fromMap(offer);
@@ -68,8 +71,6 @@ class PeerRepo {
     _stateStreamController.add(Client());
     return rtcSD.toMap();
   }
-
-  void listner(Peer event) {}
 
   void onSignalingState(RTCSignalingState state) {
     debugPrint('onSignalingState: $state');

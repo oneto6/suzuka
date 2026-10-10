@@ -5,6 +5,7 @@ import 'package:ble_peripheral_plus/ble_peripheral.dart' as peripheral;
 import 'package:flutter/foundation.dart';
 import 'package:suzuka/core/config.dart';
 import 'package:suzuka/feature/blenearby/state.dart';
+import 'package:suzuka/feature/blenearby/write_handler.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 extension AvailabilityStreamX on Stream<AvailabilityState> {
@@ -23,15 +24,23 @@ extension AvailabilityStreamX on Stream<AvailabilityState> {
 final bleNearbyRepo = BleNearbyRepo();
 
 class BleNearbyRepo {
-  late StreamController<BleNearybyState> _stateStreamController;
-  late Stream<BleNearybyState> stateStream;
+  final StreamController<BleNearybyState> _stateStreamController =
+      StreamController<BleNearybyState>.broadcast();
+  Stream<BleNearybyState> get stateStream => _stateStreamController.stream;
   late StreamSubscription<AvailabilityState> _sub;
   late Stream<BleDevice> deviceStream;
   late BleNearybyState _state;
 
-  void Function(String, String)? _offerReceivedCallback;
+  void Function(String, String?)? _offerReceivedCallback;
 
-  set offerReceivedCallback(void Function(String, String) callback) {
+  HostComposetion get host => HostComposetion(this);
+
+  ClientComposetion get client => ClientComposetion(this);
+
+  set offerReceivedCallback(void Function(String, String?) callback) {
+    debugPrint(
+      'set offerReceivedCallback: $callback, hashcode: ${callback.hashCode}',
+    );
     _offerReceivedCallback = callback;
   }
 
@@ -69,8 +78,6 @@ class BleNearbyRepo {
   Future<void> initialize() async {
     debugPrint('BleNearbyRepo initialize');
     deviceStream = UniversalBle.scanStream;
-    _stateStreamController = StreamController<BleNearybyState>.broadcast();
-    stateStream = _stateStreamController.stream;
 
     final p = await UniversalBle.hasPermissions();
     debugPrint('hasPermissions: $p');
@@ -80,7 +87,9 @@ class BleNearbyRepo {
 
     _sub = UniversalBle.availabilityStream.listenPair(_listner);
     _emit(StateInitial());
-    peripheral.BlePeripheral.setWriteRequestCallback(writeHandle);
+    peripheral.BlePeripheral.setWriteRequestCallback(
+      WriteHandler(this).handler,
+    );
     peripheral.BlePeripheral.setAdvertisingStatusUpdateCallback((b, s) async {
       debugPrint('setAdvertisingStatusUpdateCallback: $b $s');
       var state = _state;
@@ -106,6 +115,13 @@ class BleNearbyRepo {
         characteristics: [
           peripheral.BleCharacteristic(
             uuid: bleWrite,
+            properties: [peripheral.CharacteristicProperties.write.index],
+            permissions: [
+              peripheral.AttributePermissions.writeEncryptionRequired.index,
+            ],
+          ),
+          peripheral.BleCharacteristic(
+            uuid: bleChunkWrite,
             properties: [peripheral.CharacteristicProperties.write.index],
             permissions: [
               peripheral.AttributePermissions.writeEncryptionRequired.index,
@@ -217,26 +233,6 @@ class BleNearbyRepo {
     return data;
   }
 
-  peripheral.WriteRequestResult? writeHandle(
-    String deviceId,
-    String characteristicId,
-    int offset,
-    Uint8List? value,
-  ) {
-    debugPrint('writeHandle');
-    if (value == null) return null;
-    final offer = utf8.decode(value);
-    debugPrint('write handler offer: $offer ');
-
-    // peripheral.BlePeripheral.updateCharacteristic(
-    //   characteristicId: bleNotify,
-    //   value: utf8.encode('sdp recipents msg'),
-    //   deviceId: deviceId,
-    // );
-    _offerReceivedCallback?.call(deviceId, offer);
-    return null;
-  }
-
   Future<String?> _connectDevice(String deviceId) async {
     final dataTransaction = Completer<List<int>>();
     void onValueChange(
@@ -302,5 +298,94 @@ class BleNearbyRepo {
     UniversalBle.onValueChange = null;
     await UniversalBle.unsubscribe(deviceId, service.uuid, notifyChar.uuid);
     return utf8.decode(data);
+  }
+}
+
+class HostComposetion {
+  BleNearbyRepo repo;
+
+  HostComposetion(this.repo);
+
+  Future<void> sendAnswerOffer(String deviceId, Uint8List data) async {
+    await peripheral.BlePeripheral.updateCharacteristic(
+      characteristicId: bleNotify,
+      value: data,
+      deviceId: deviceId,
+    );
+  }
+}
+
+class ClientComposetion {
+  BleNearbyRepo repo;
+
+  ClientComposetion(this.repo);
+
+  Future<String?> sendOffer(String deviceId, String offer) async {
+    final data = utf8.encode(offer);
+    await UniversalBle.connect(deviceId);
+    await UniversalBle.pair(deviceId);
+    var completer = Completer<String?>();
+    void onValueChange(
+      String dId,
+      String characteristicId,
+      Uint8List value,
+      int? timestamp,
+    ) {
+      if (dId != deviceId) return;
+      final json = utf8.decode(value);
+      completer.complete(json);
+    }
+
+    bool contains = false;
+    for (final i in await UniversalBle.discoverServices(deviceId)) {
+      debugPrint('service: ${i.toString()}');
+      if (i.uuid == bleServiceID) {
+        debugPrint('found bleServiceID: ${i.uuid}');
+        contains = true;
+      }
+    }
+    try {
+      debugPrint('contains: $contains');
+      if (!contains) {
+        throw Exception(
+          'bleServiceID not found in the list of service in the device',
+        );
+      }
+      UniversalBle.onValueChange = onValueChange;
+      try {
+        await UniversalBle.write(
+          deviceId,
+          bleServiceID,
+          bleWrite,
+          utf8.encode(jsonEncode({'length': data.length, 'type': 'chunk'})),
+        );
+      } catch (e) {
+        debugPrint('write failed: $e');
+        rethrow;
+      }
+
+      for (var i = 0; i < data.length; i += 512) {
+        final end = (i + 512).clamp(0, data.length);
+        final chunk = data.sublist(i, end);
+
+        try {
+          await UniversalBle.write(
+            deviceId,
+            bleServiceID,
+            bleChunkWrite,
+            chunk,
+          );
+        } catch (e) {
+          debugPrint('write failed: $e');
+          rethrow;
+        }
+      }
+    } catch (e) {
+      completer.complete();
+      UniversalBle.onValueChange = null;
+      return null;
+    }
+    UniversalBle.onValueChange = null;
+    return await completer.future;
   }
 }
