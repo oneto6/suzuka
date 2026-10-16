@@ -11,11 +11,14 @@ class PeerNotifier extends Notifier<Peer> {
   PeerNotifier();
   @override
   Peer build() {
+    state = Init();
     _sub = peerRepo.stream.listen(listner);
     ref.onDispose(_sub.cancel);
-    peerRepo.initialize();
+    peerRepo.initialize().then((_) {
+      state = Ready();
+    });
     ref.onDispose(peerRepo.dispose);
-    return Init();
+    return state;
   }
 
   Future<Offer> createOffer() async => await peerRepo.createOffer();

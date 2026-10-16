@@ -1,6 +1,10 @@
 sealed class Peer {}
 
-class Init extends Peer {}
+sealed class StateInit extends Peer {}
+
+class Init extends StateInit {}
+
+class Ready extends StateInit {}
 
 sealed class Negotiation extends Peer {}
 

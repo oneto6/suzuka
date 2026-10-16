@@ -61,7 +61,7 @@ class _BleNearbyState extends ConsumerState<BleNearby> {
                         onTap: () async {
                           await ref
                               .read(bleNearbyProvider.notifier)
-                              .connectDevice(discovery.elementAt(index));
+                              .sendOffer(discovery.elementAt(index));
                         },
                         title: Text(discovery.elementAt(index)),
                       );

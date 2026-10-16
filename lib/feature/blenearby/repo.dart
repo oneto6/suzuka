@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:math';
 
 import 'package:ble_peripheral_plus/ble_peripheral.dart' as peripheral;
 import 'package:flutter/foundation.dart';
 import 'package:suzuka/core/config.dart';
+import 'package:suzuka/feature/blenearby/client_composetion.dart';
+import 'package:suzuka/feature/blenearby/host_composetion.dart';
 import 'package:suzuka/feature/blenearby/state.dart';
-import 'package:suzuka/feature/blenearby/write_handler.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 extension AvailabilityStreamX on Stream<AvailabilityState> {
@@ -22,6 +23,12 @@ extension AvailabilityStreamX on Stream<AvailabilityState> {
 }
 
 final bleNearbyRepo = BleNearbyRepo();
+typedef DataStreamParams = ({
+  String deviceId,
+  String characteristicId,
+  Uint8List value,
+  int? timestamp,
+});
 
 class BleNearbyRepo {
   final StreamController<BleNearybyState> _stateStreamController =
@@ -30,19 +37,15 @@ class BleNearbyRepo {
   late StreamSubscription<AvailabilityState> _sub;
   late Stream<BleDevice> deviceStream;
   late BleNearybyState _state;
+  final StreamController<BleNearbyEvent> _eventStreamController =
+      StreamController<BleNearbyEvent>();
+  Stream<BleNearbyEvent> get eventStream => _eventStreamController.stream;
 
-  void Function(String, String?)? _offerReceivedCallback;
+  final StreamController<DataStreamParams> _dataStream = .new();
 
-  HostComposetion get host => HostComposetion(this);
+  HostComposetion get host => HostComposetion(this, _eventStreamController);
 
-  ClientComposetion get client => ClientComposetion(this);
-
-  set offerReceivedCallback(void Function(String, String?) callback) {
-    debugPrint(
-      'set offerReceivedCallback: $callback, hashcode: ${callback.hashCode}',
-    );
-    _offerReceivedCallback = callback;
-  }
+  ClientComposetion get client => ClientComposetion(this, _dataStream);
 
   void _emit(BleNearybyState state) {
     _state = state;
@@ -52,6 +55,7 @@ class BleNearbyRepo {
   void dispose() async {
     debugPrint('BleNearbyRepo dispose');
     _sub.cancel();
+    UniversalBle.onValueChange = null;
     _stateStreamController.close();
     final AvailabilityState availabilityState =
         await UniversalBle.getBluetoothAvailabilityState();
@@ -78,6 +82,7 @@ class BleNearbyRepo {
   Future<void> initialize() async {
     debugPrint('BleNearbyRepo initialize');
     deviceStream = UniversalBle.scanStream;
+    UniversalBle.onValueChange = onValueChange;
 
     final p = await UniversalBle.hasPermissions();
     debugPrint('hasPermissions: $p');
@@ -88,7 +93,7 @@ class BleNearbyRepo {
     _sub = UniversalBle.availabilityStream.listenPair(_listner);
     _emit(StateInitial());
     peripheral.BlePeripheral.setWriteRequestCallback(
-      WriteHandler(this).handler,
+      HostComposetion(this, _eventStreamController).writeHandler,
     );
     peripheral.BlePeripheral.setAdvertisingStatusUpdateCallback((b, s) async {
       debugPrint('setAdvertisingStatusUpdateCallback: $b $s');
@@ -221,171 +226,65 @@ class BleNearbyRepo {
     scanFilter: ScanFilter(withServices: [bleServiceID]),
   );
 
-  Future<String?> connectDevice(String deviceId) async {
-    try {
-      await UniversalBle.connect(deviceId);
-    } catch (e) {
-      debugPrint('connect device err: ${e.toString()}');
-      return null;
-    }
-    final data = await _connectDevice(deviceId);
-    await UniversalBle.disconnect(deviceId);
-    return data;
-  }
-
-  Future<String?> _connectDevice(String deviceId) async {
-    final dataTransaction = Completer<List<int>>();
-    void onValueChange(
-      String deviceId,
-      String characteristicId,
-      Uint8List value,
-      int? timestamp,
-    ) {
-      final msg = utf8.decode(value);
-      debugPrint('onValueChange: $deviceId $characteristicId $msg $timestamp');
-      dataTransaction.complete(value);
-    }
-
-    await UniversalBle.pair(deviceId);
-    debugPrint('_connectDevice');
-
-    BleConnectionState s = await UniversalBle.getConnectionState(deviceId);
-    debugPrint('connection state: $s');
-    var serviceList = await UniversalBle.discoverServices(deviceId);
-
-    BleService? service;
-    BleCharacteristic? notifyChar;
-    BleCharacteristic? writeChar;
-    debugPrint(
-      'service: $service notifyChar: $notifyChar writeChar: $writeChar',
-    );
-
-    for (final s in serviceList) {
-      if (s.uuid.toLowerCase() == bleServiceID.toLowerCase()) {
-        service = s;
-        break;
-      }
-    }
-
-    if (service == null) return null;
-
-    for (final characteristic in service.characteristics) {
-      if (characteristic.uuid.toLowerCase() == bleNotify.toLowerCase()) {
-        notifyChar = characteristic;
-      }
-
-      if (characteristic.uuid.toLowerCase() == bleWrite.toLowerCase()) {
-        writeChar = characteristic;
-      }
-    }
-
-    if (notifyChar == null || writeChar == null) return null;
-    UniversalBle.onValueChange = onValueChange;
-    await UniversalBle.subscribeNotifications(
-      deviceId,
-      service.uuid,
-      notifyChar.uuid,
-    );
-    await UniversalBle.write(
-      deviceId,
-      service.uuid,
-      writeChar.uuid,
-      utf8.encode('sdp msg'),
-      // withoutResponse: true,
-    );
-    final data = await dataTransaction.future;
-    debugPrint('data: ${utf8.decode(data)}');
-    UniversalBle.onValueChange = null;
-    await UniversalBle.unsubscribe(deviceId, service.uuid, notifyChar.uuid);
-    return utf8.decode(data);
-  }
-}
-
-class HostComposetion {
-  BleNearbyRepo repo;
-
-  HostComposetion(this.repo);
-
-  Future<void> sendAnswerOffer(String deviceId, Uint8List data) async {
-    await peripheral.BlePeripheral.updateCharacteristic(
-      characteristicId: bleNotify,
-      value: data,
+  void onValueChange(
+    String deviceId,
+    String characteristicId,
+    Uint8List value,
+    int? timestamp,
+  ) {
+    _dataStream.add((
       deviceId: deviceId,
-    );
+      characteristicId: characteristicId,
+      value: value,
+      timestamp: timestamp,
+    ));
   }
 }
 
-class ClientComposetion {
-  BleNearbyRepo repo;
+sealed class BleNearbyEvent {
+  final String deviceId;
 
-  ClientComposetion(this.repo);
+  BleNearbyEvent(this.deviceId);
+}
 
-  Future<String?> sendOffer(String deviceId, String offer) async {
-    final data = utf8.encode(offer);
-    await UniversalBle.connect(deviceId);
-    await UniversalBle.pair(deviceId);
-    var completer = Completer<String?>();
-    void onValueChange(
-      String dId,
-      String characteristicId,
-      Uint8List value,
-      int? timestamp,
-    ) {
-      if (dId != deviceId) return;
-      final json = utf8.decode(value);
-      completer.complete(json);
-    }
+class OfferReceived extends BleNearbyEvent {
+  final String offer;
 
-    bool contains = false;
-    for (final i in await UniversalBle.discoverServices(deviceId)) {
-      debugPrint('service: ${i.toString()}');
-      if (i.uuid == bleServiceID) {
-        debugPrint('found bleServiceID: ${i.uuid}');
-        contains = true;
-      }
-    }
-    try {
-      debugPrint('contains: $contains');
-      if (!contains) {
-        throw Exception(
-          'bleServiceID not found in the list of service in the device',
-        );
-      }
-      UniversalBle.onValueChange = onValueChange;
-      try {
-        await UniversalBle.write(
-          deviceId,
-          bleServiceID,
-          bleWrite,
-          utf8.encode(jsonEncode({'length': data.length, 'type': 'chunk'})),
-        );
-      } catch (e) {
-        debugPrint('write failed: $e');
-        rethrow;
-      }
+  OfferReceived(super.deviceId, this.offer);
+}
 
-      for (var i = 0; i < data.length; i += 512) {
-        final end = (i + 512).clamp(0, data.length);
-        final chunk = data.sublist(i, end);
+List<Uint8List> packetize(Uint8List data, int packetSize, int msgId) {
+  const headerSize = 12;
 
-        try {
-          await UniversalBle.write(
-            deviceId,
-            bleServiceID,
-            bleChunkWrite,
-            chunk,
-          );
-        } catch (e) {
-          debugPrint('write failed: $e');
-          rethrow;
-        }
-      }
-    } catch (e) {
-      completer.complete();
-      UniversalBle.onValueChange = null;
-      return null;
-    }
-    UniversalBle.onValueChange = null;
-    return await completer.future;
+  if (packetSize <= headerSize) {
+    throw ArgumentError.value(
+      packetSize,
+      'packetSize',
+      'Must be greater than $headerSize bytes',
+    );
   }
+
+  final payloadSize = packetSize - headerSize;
+  final packets = <Uint8List>[];
+
+  for (var offset = 0; offset < data.length; offset += payloadSize) {
+    final end = (offset + payloadSize).clamp(0, data.length);
+    final payload = Uint8List.sublistView(data, offset, end);
+    final packet = Uint8List(headerSize + payload.length);
+    final header = ByteData.sublistView(packet);
+
+    header.setUint64(0, msgId, Endian.big);
+    header.setUint32(8, offset, Endian.big);
+
+    packet.setRange(headerSize, packet.length, payload);
+    packets.add(packet);
+  }
+
+  return packets;
+}
+
+int generateMsgId() {
+  final random = Random.secure();
+
+  return (random.nextInt(1 << 31) << 32) | random.nextInt(1 << 32);
 }

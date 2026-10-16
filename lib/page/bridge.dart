@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:suzuka/feature/blenearby/provider.dart';
@@ -54,15 +52,19 @@ final bridgeProvider = NotifierProvider.family
 
 class BridgeNotifier extends Notifier<BridgeState> {
   final NegotiationRole role;
-
+  late ProviderSubscription<Peer> sub;
   BridgeNotifier(this.role);
   @override
   build() {
     state = NegotiationState();
     final _ = ref.listen(bleNearbyProvider, bleNearbyListner);
     final _ = ref.listen(peerProvider, peerListner);
+    sub = ref.listen(peerProvider, (p, n) {
+      if (n is! Ready) return;
+      sub.close();
+      _init();
+    });
 
-    _init();
     return state;
   }
 
@@ -130,7 +132,7 @@ class BridgeNotifier extends Notifier<BridgeState> {
             .read(peerProvider.notifier)
             .answerOffer(map);
 
-        Uint8List data = utf8.encode(jsonEncode(answerOffer));
+        final data = jsonEncode(answerOffer);
         await ref
             .read(bleNearbyProvider.notifier)
             .host

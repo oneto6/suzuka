@@ -22,7 +22,7 @@ final peerRepo = PeerRepo();
 class PeerRepo {
   late Peer state;
 
-  final StreamController<Peer> _stateStreamController = StreamController();
+  final StreamController<Peer> _stateStreamController = .new();
 
   Stream<Peer> get stream => _stateStreamController.stream;
   late StreamSubscription<Peer> _sub;
